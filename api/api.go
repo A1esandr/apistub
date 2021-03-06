@@ -72,7 +72,10 @@ func jsonMiddleware(next JSONHandler) http.Handler {
 		result := next.Result(w, r)
 		if result != nil {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(result)
+			err := json.NewEncoder(w).Encode(result)
+			if err != nil {
+				http.Error(w, "500 internal error", http.StatusInternalServerError)
+			}
 		}
 	})
 }
