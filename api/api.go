@@ -12,6 +12,8 @@ type (
 
 	apiHandler struct{}
 
+	rootHandler struct{}
+
 	Response struct {
 		Result int `json:"result"`
 	}
@@ -23,6 +25,11 @@ type (
 	Api interface {
 		Start()
 	}
+
+	JSONHandler interface {
+		ServeHTTP(http.ResponseWriter, *http.Request)
+		Result(w http.ResponseWriter, r *http.Request) interface{}
+	}
 )
 
 func New() Api {
@@ -31,17 +38,8 @@ func New() Api {
 
 func (a *app) Start() {
 	mux := http.NewServeMux()
-	mux.Handle("/api/", apiHandler{})
-	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-		// The "/" pattern matches everything, so we need to check
-		// that we're at the root here.
-		if req.URL.Path != "/" {
-			http.NotFound(w, req)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(&Welcome{Message: "Welcome to the home page!"})
-	})
+	mux.Handle("/api/", jsonMiddleware(apiHandler{}))
+	mux.Handle("/", jsonMiddleware(rootHandler{}))
 
 	s := &http.Server{
 		Addr:           ":8080",
@@ -53,7 +51,28 @@ func (a *app) Start() {
 	log.Fatal(s.ListenAndServe())
 }
 
-func (apiHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(&Response{Result: 1})
+func (apiHandler) ServeHTTP(http.ResponseWriter, *http.Request) {}
+
+func (apiHandler) Result(http.ResponseWriter, *http.Request) interface{} {
+	return &Response{Result: 1}
+}
+
+func (rootHandler) ServeHTTP(http.ResponseWriter, *http.Request) {}
+
+func (rootHandler) Result(w http.ResponseWriter, r *http.Request) interface{} {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return nil
+	}
+	return &Welcome{Message: "Welcome to the home page!"}
+}
+
+func jsonMiddleware(next JSONHandler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		result := next.Result(w, r)
+		if result != nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(result)
+		}
+	})
 }
